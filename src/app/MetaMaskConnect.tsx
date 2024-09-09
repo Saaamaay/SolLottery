@@ -211,7 +211,7 @@ const MetaMaskConnect: React.FC<{ showFullContent?: boolean }> = ({ showFullCont
     <div className="max-w-4xl mx-auto px-4">
       {showFullContent ? (
         <>
-          <h1 className="text-4xl font-bold mb-4">Sepolia Lottery</h1>
+          <h1 className="text-4xl font-bold mb-4">Sam's Sepolia Lottery</h1>
           <p className="text-xl mb-6">Deposit to win!</p>
           
           <div className="flex gap-4 mb-8">
