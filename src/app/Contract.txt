@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract TwoDepositLotteryContract {
+    address public owner;
+    address public firstDepositor;
+    address public secondDepositor;
+    uint256 public constant DEPOSIT_AMOUNT = 0.001 ether;
+    uint256 public depositCount;
+    address public winnerName;
+
+    event DepositReceived(address depositor, uint256 amount);
+    event WinnerPaid(address winner, uint256 amount);
+
+    constructor() {
+        owner = msg.sender;
+        depositCount = 0;
+    }
+
+    function deposit() public payable {
+        require(depositCount < 2, "Two deposits have already been made");
+        require(msg.value == DEPOSIT_AMOUNT, "Deposit must be exactly 0.001 ETH");
+        require(msg.sender != firstDepositor, "You have already made a deposit");
+
+        if (depositCount == 0) {
+            firstDepositor = msg.sender;
+        } else {
+            secondDepositor = msg.sender;
+        }
+
+        depositCount++;
+        emit DepositReceived(msg.sender, msg.value);
+
+        if (depositCount == 2) {
+            selectWinnerAndPay();
+        }
+    }
+
+    function getBalance() public view returns (uint256) {
+        return address(this).balance;
+    }
+
+    function selectWinnerAndPay() private {
+        require(depositCount == 2, "Need two deposits to select a winner");
+
+        // Generate a pseudo-random number
+        // Note: This is not secure for high-value contracts. Use with caution.
+        uint256 randomNumber = 1;
+
+        address winner = randomNumber % 2 == 0 ? firstDepositor : secondDepositor;
+        uint256 prize = address(this).balance;
+
+        winnerName = winner;
+        emit WinnerPaid(winner, prize);
+    }
+
+    function getWinner() internal view returns (address) {
+        return winnerName;
+    }
+
+    function withdraw() public {
+        require(msg.sender == winnerName, "Only the winner can withdraw");
+        require(address(this).balance > 0, "No funds to withdraw");
+
+        uint256 amount = address(this).balance;
+        payable(msg.sender).transfer(amount);
+        
+        // Reset the contract state after the winner withdraws
+        firstDepositor = address(0);
+        secondDepositor = address(0);
+        depositCount = 0;
+        winnerName = address(0);
+    }
+
+    // Fallback function in case someone sends Ether to the contract directly
+    receive() external payable {
+        revert("Please use the deposit function to participate");
+    }
+}
