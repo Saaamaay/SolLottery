@@ -1,15 +1,24 @@
 'use client';
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Web3 from 'web3'
+import { Contract } from 'web3-eth-contract'
+import { AbiItem } from 'web3-utils';
 
 import contractABI from "./abi.json";
 
+
 const contractAddress = "0x24227b3b64f7fa53869265d01863e67f91c5e5c0";
+
+interface EthereumProvider {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>; // Change `any` in `params` to `unknown` if the params vary.
+  on?: (event: string, handler: (...args: unknown[]) => void) => void; // Change `any` to `unknown`
+  removeListener?: (event: string, handler: (...args: unknown[]) => void) => void; // Change `any` to `unknown`
+}
 
 declare global {
   interface Window {
-    ethereum: any;
+    ethereum: EthereumProvider;
   }
 }
 
@@ -18,13 +27,13 @@ const MetaMaskConnect: React.FC<{ showFullContent?: boolean }> = ({ showFullCont
   const [account, setAccount] = useState<string | null>(null)
   const [balance, setBalance] = useState<string>('')
   const [error, setError] = useState<string>('')
-  const [contract, setContract] = useState<any>(null)
+  const [contract, setContract] = useState<Contract<AbiItem[]> | null>(null); // Change to AbiItem[]
   const [winner, setWinner] = useState<string | null>(null)
-  const [winAmount, setWinAmount] = useState<string>('')
   const [player1, setPlayer1] = useState<string>('No deposit yet')
   const [player2, setPlayer2] = useState<string>('No deposit yet')
   const [isConnected, setIsConnected] = useState(false)
   const [contractBalance, setContractBalance] = useState<string>('0');
+  
 
   useEffect(() => {
     // Check if already connected when component mounts
@@ -34,7 +43,7 @@ const MetaMaskConnect: React.FC<{ showFullContent?: boolean }> = ({ showFullCont
   async function checkConnection() {
     if (typeof window.ethereum !== 'undefined') {
       try {
-        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' }) as string[];
         if (accounts.length > 0) {
           const web3Instance = new Web3(window.ethereum);
           setWeb3(web3Instance);
@@ -56,7 +65,7 @@ const MetaMaskConnect: React.FC<{ showFullContent?: boolean }> = ({ showFullCont
         setWeb3(web3Instance);
         const accounts = await web3Instance.eth.getAccounts();
         setAccount(accounts[0]);
-        const contractInstance = new web3Instance.eth.Contract(contractABI as any, contractAddress);
+        const contractInstance = new web3Instance.eth.Contract(contractABI as AbiItem[], contractAddress); // Change to AbiItem[]
         setContract(contractInstance);
         updateContractBalance();
         setIsConnected(true);
@@ -76,7 +85,6 @@ const MetaMaskConnect: React.FC<{ showFullContent?: boolean }> = ({ showFullCont
     setBalance('')
     setContract(null)
     setWinner(null)
-    setWinAmount('')
     setIsConnected(false)
   }
 
@@ -93,15 +101,16 @@ const MetaMaskConnect: React.FC<{ showFullContent?: boolean }> = ({ showFullCont
       checkWinner();
       updatePlayerStatus();
       await updateContractBalance();
-    } catch (ex: any) {
-      console.error("Deposit error:", ex);
-      setError('Failed to deposit: ' + (ex.message || 'Unknown error'));
+    } catch (ex: unknown) { // Change `any` to `unknown`
+      const error = ex as Error; // Type assertion
+      console.error("Deposit error:", error);
+      setError('Failed to deposit: ' + (error.message || 'Unknown error'));
     }
   }
 
   useEffect(() => {
     if (web3) {
-      const contractInstance = new web3.eth.Contract(contractABI as any, contractAddress);
+      const contractInstance = new web3.eth.Contract(contractABI as AbiItem[], contractAddress); // Change to AbiItem[]
       setContract(contractInstance);
     }
   }, [web3]);
@@ -113,12 +122,13 @@ const MetaMaskConnect: React.FC<{ showFullContent?: boolean }> = ({ showFullCont
     }
     try {
       const gasEstimate = await contract.methods.withdraw().estimateGas({ from: account });
-      const result = await contract.methods.withdraw().send({ from: account, gas: gasEstimate });
+      const result = await contract.methods.withdraw().send({ from: account, gas: gasEstimate.toString() });
       console.log("Withdrawal result:", result);
       await updateLotteryStatus(); // Ensure this is called only once
-    } catch (ex: any) {
-      console.error("Withdrawal error:", ex);
-      setError('Failed to withdraw: ' + (ex.message || 'Unknown error'));
+    } catch (ex: unknown) { // Change `any` to `unknown`
+      const error = ex as Error; // Type assertion
+      console.error("Withdrawal error:", error);
+      setError('Failed to withdraw: ' + (error.message || 'Unknown error'));
     }
   }
 
@@ -126,10 +136,10 @@ const MetaMaskConnect: React.FC<{ showFullContent?: boolean }> = ({ showFullCont
     if (!contract) return;
     try {
       const [firstDepositor, secondDepositor, winnerAddress, balance] = await Promise.all([
-        contract.methods.firstDepositor().call(),
-        contract.methods.secondDepositor().call(),
-        contract.methods.winnerName().call(),
-        contract.methods.getBalance().call(),
+        contract.methods.firstDepositor().call() as Promise<string>,
+        contract.methods.secondDepositor().call() as Promise<string>,
+        contract.methods.winnerName().call() as Promise<string>,
+        contract.methods.getBalance().call() as Promise<string>,
       ]);
 
       setPlayer1(firstDepositor !== '0x0000000000000000000000000000000000000000' ? 'Deposited' : 'No deposit yet');
@@ -150,47 +160,52 @@ const MetaMaskConnect: React.FC<{ showFullContent?: boolean }> = ({ showFullCont
     }
   }, [web3, account])
 
-  useEffect(() => {
-    if (contract) {
-      checkWinner()
-      updatePlayerStatus()
-      updateContractBalance()
-    }
-  }, [contract])
-
-  async function updatePlayerStatus() {
-    if (!contract) return
-    try {
-      const firstDepositor = await contract.methods.firstDepositor().call()
-      const secondDepositor = await contract.methods.secondDepositor().call()
-      setPlayer1(firstDepositor !== '0x0000000000000000000000000000000000000000' ? 'Deposited' : 'No deposit yet')
-      setPlayer2(secondDepositor !== '0x0000000000000000000000000000000000000000' ? 'Deposited' : 'No deposit yet')
-    } catch (ex) {
-      console.error(ex)
-    }
-  }
-
-  async function updateContractBalance() {
-    if (contract) {
-      try {
-        const balance = await contract.methods.getBalance().call();
-        setContractBalance(web3?.utils.fromWei(balance, 'ether') || '0');
-      } catch (ex) {
-        console.error("Error fetching contract balance:", ex);
-      }
-    }
-  }
-
-  async function checkWinner() {
+  const checkWinner = useCallback(async () => {
     if (!contract) return;
     try {
-      const winnerAddress = await contract.methods.winnerName().call();
+      const winnerAddress = await contract.methods.winnerName().call() as string;
       setWinner(winnerAddress !== '0x0000000000000000000000000000000000000000' ? `${winnerAddress.slice(0, 6)}...${winnerAddress.slice(-4)}` : 'Not determined yet');
     } catch (err) {
       console.error('Error checking winner:', err);
       setError('Failed to check winner');
     }
-  }
+  }, [contract]);
+
+  const updatePlayerStatus = useCallback(async () => {
+    if (!contract) return;
+    try {
+      const firstDepositor = await contract.methods.firstDepositor().call() as string;
+      const secondDepositor = await contract.methods.secondDepositor().call() as string;
+      setPlayer1(firstDepositor !== '0x0000000000000000000000000000000000000000' ? 'Deposited' : 'No deposit yet');
+      setPlayer2(secondDepositor !== '0x0000000000000000000000000000000000000000' ? 'Deposited' : 'No deposit yet');
+    } catch (ex: unknown) { // Change `any` to `unknown`
+      const error = ex as Error; // Type assertion
+      console.error(error);
+    }
+  }, [contract]);
+
+  const updateContractBalance = useCallback(async () => {
+    if (contract) {
+      try {
+        const balance = await contract.methods.getBalance().call() as string;
+        setContractBalance(web3?.utils.fromWei(balance, 'ether') || '0');
+      } catch (ex: unknown) { // Change `any` to `unknown`
+        const error = ex as Error; // Type assertion
+        console.error("Error fetching contract balance:", error);
+      }
+    }
+  }, [contract, web3]);
+  
+
+  useEffect(() => {
+    if (contract) {
+      checkWinner();
+      updatePlayerStatus();
+      updateContractBalance();
+    }
+  }, [contract, checkWinner, updateContractBalance, updatePlayerStatus]);
+
+
 
   return (
     <div className="max-w-4xl mx-auto px-4">

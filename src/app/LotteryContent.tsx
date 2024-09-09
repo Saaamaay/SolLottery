@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useWeb3 } from './Web3Context';
 
 const LotteryContent: React.FC = () => {
@@ -9,19 +9,15 @@ const LotteryContent: React.FC = () => {
   const [contractBalance, setContractBalance] = useState<string>('0');
   const [error, setError] = useState<string>('');
 
-  useEffect(() => {
-    if (contract) {
-      updateLotteryStatus();
-    }
-  }, [contract]);
+  const updateLotteryStatus = useCallback(async () => {
+    if (!contract) return;
 
-  const updateLotteryStatus = async () => {
     try {
       const [firstDepositor, secondDepositor, winnerAddress, balance] = await Promise.all([
-        contract.methods.firstDepositor().call(),
-        contract.methods.secondDepositor().call(),
-        contract.methods.winnerName().call(),
-        contract.methods.getBalance().call(),
+        contract.methods.firstDepositor().call() as Promise<string>,
+        contract.methods.secondDepositor().call() as Promise<string>,
+        contract.methods.winnerName().call() as Promise<string>,
+        contract.methods.getBalance().call() as Promise<string>,
       ]);
 
       setPlayer1(firstDepositor !== '0x0000000000000000000000000000000000000000' ? 'Deposited' : 'No deposit yet');
@@ -32,7 +28,13 @@ const LotteryContent: React.FC = () => {
       console.error('Error updating lottery status:', err);
       setError('Failed to update lottery status');
     }
-  };
+  }, [contract, web3]);
+
+  useEffect(() => {
+    if (contract) {
+      updateLotteryStatus();
+    }
+  }, [contract, updateLotteryStatus]);
 
   const deposit = async () => {
     if (!contract || !account) {
@@ -40,7 +42,7 @@ const LotteryContent: React.FC = () => {
       return;
     }
     try {
-      const depositAmount = await contract.methods.DEPOSIT_AMOUNT().call();
+      const depositAmount = String(await contract.methods.DEPOSIT_AMOUNT().call());
       await contract.methods.deposit().send({ from: account, value: depositAmount });
       await updateLotteryStatus(); // Ensure this is called only once
     } catch (err) {
@@ -56,7 +58,7 @@ const LotteryContent: React.FC = () => {
     }
     try {
       const gasEstimate = await contract.methods.withdraw().estimateGas({ from: account });
-      await contract.methods.withdraw().send({ from: account, gas: gasEstimate });
+      await contract.methods.withdraw().send({ from: account, gas: String(gasEstimate) });
       await updateLotteryStatus(); // Ensure this is called only once
     } catch (err) {
       console.error('Error withdrawing:', err);
